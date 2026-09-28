@@ -7,9 +7,8 @@ export async function submitEnquiry(input: CreateEnquiryInput): Promise<EnquiryR
   });
 
   if (error) {
-    // Fallback: if Edge function is not deployed in test environment, call submit_lead_enquiry RPC if allowed or return formatted success/error
     console.warn('[submitEnquiry] Edge Function invocation error:', error.message);
-    throw new Error(error.message || 'Something went wrong while submitting your enquiry. Please try again.');
+    throw new Error(error.message || 'Unable to submit your enquiry at this time. Please try again.');
   }
 
   return data;

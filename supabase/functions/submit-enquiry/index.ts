@@ -1,8 +1,8 @@
 /**
  * @file submit-enquiry/index.ts
- * @description Supabase Edge Function for Public Lead Enquiry Ingestion (V1.0 Stage 2)
- * Enforces rate-limiting, honeypot detection, input sanitization, server-side derivation,
- * and transactional audit-logged persistence.
+ * @description Production Supabase Edge Function for Public Lead Enquiry Ingestion (V1.0 Stage 2)
+ * Ingests public website enquiries, enforces server-side validation and honeypot checks,
+ * extracts client IP, and delegates transactional execution to canonical public.submit_lead_enquiry() RPC.
  */
 
 import { serve } from 'https://deno.land/std@0.177.0/http/server.ts';
@@ -15,29 +15,26 @@ const corsHeaders = {
 };
 
 interface EnquiryPayload {
-  company_id?: string;
   name: string;
   email: string;
   phone: string;
   enquiry_type: 'REAL_ESTATE' | 'AUTOMATION' | 'DEVELOPER_PARTNERSHIP' | 'TECHNOLOGY' | 'OTHER';
   message: string;
   page_source?: string;
-  source?: string;
   metadata?: Record<string, unknown>;
-  website_url_check?: string; // Honeypot field 1
-  hp_company_field?: string;  // Honeypot field 2
+  website_url_check?: string; // Primary Honeypot field
+  hp_company_field?: string;  // Secondary Honeypot field
 }
 
-const DEFAULT_COMPANY_ID = 'c0000000-0000-0000-0000-000000000001';
-
 serve(async (req: Request) => {
+  // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
-    return new Response('ok', { headers: corsHeaders });
+    return new Response(null, { status: 204, headers: corsHeaders });
   }
 
   if (req.method !== 'POST') {
     return new Response(
-      JSON.stringify({ success: false, message: 'Method not allowed' }),
+      JSON.stringify({ success: false, message: 'Method not allowed. Use POST.' }),
       { status: 405, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   }
@@ -47,38 +44,41 @@ serve(async (req: Request) => {
     const supabaseServiceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || '';
 
     if (!supabaseUrl || !supabaseServiceKey) {
-      throw new Error('Supabase environment variables are missing.');
+      console.error('[submit-enquiry] Missing server-side Supabase environment configuration.');
+      return new Response(
+        JSON.stringify({
+          success: false,
+          message: 'Unable to submit your enquiry at this time due to server configuration.',
+        }),
+        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
     }
 
     const supabase = createClient(supabaseUrl, supabaseServiceKey, {
       auth: { persistSession: false },
     });
 
-    const body: EnquiryPayload = await req.json();
-
-    // 1. Anti-Spam Honeypot Check (Silently drop or acknowledge bot submissions)
-    if (
-      (body.website_url_check && body.website_url_check.trim().length > 0) ||
-      (body.hp_company_field && body.hp_company_field.trim().length > 0)
-    ) {
-      console.warn('[Anti-Spam] Bot submission dropped via honeypot field.');
+    let body: EnquiryPayload;
+    try {
+      body = await req.json();
+    } catch {
       return new Response(
-        JSON.stringify({
-          success: true,
-          message: 'Your enquiry has been received and routed.',
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({ success: false, message: 'Malformed JSON payload.' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    // 2. Client IP & Rate Limiting Key
-    const clientIp =
-      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
-      req.headers.get('cf-connecting-ip') ||
-      'unknown-ip';
-    const rateLimitKey = `ip:${clientIp}`;
+    // 1. Anti-Spam Honeypot Check
+    const honeypotInput = (body.website_url_check || body.hp_company_field || '').trim();
 
-    // 3. Strict Input Validation & Sanitization
+    // 2. Client IP Extraction
+    const clientIp =
+      req.headers.get('cf-connecting-ip') ||
+      req.headers.get('x-forwarded-for')?.split(',')[0].trim() ||
+      req.headers.get('x-real-ip') ||
+      '0.0.0.0';
+
+    // 3. Strict Server-Side Input Validation
     const name = (body.name || '').replace(/<[^>]*>/g, '').trim();
     if (!name || name.length < 2 || name.length > 120) {
       return new Response(
@@ -89,17 +89,17 @@ serve(async (req: Request) => {
 
     const email = (body.email || '').trim().toLowerCase();
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email)) {
+    if (!email || !emailRegex.test(email) || email.length > 255) {
       return new Response(
         JSON.stringify({ success: false, message: 'A valid email address is required.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const phone = (body.phone || '').replace(/[\s\-\(\)]/g, '').trim();
-    if (!phone || phone.length < 7 || phone.length > 20) {
+    const phone = (body.phone || '').trim();
+    if (!phone || phone.length < 8 || phone.length > 30) {
       return new Response(
-        JSON.stringify({ success: false, message: 'A valid phone number is required.' }),
+        JSON.stringify({ success: false, message: 'A valid phone number (minimum 8 characters) is required.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
@@ -113,62 +113,62 @@ serve(async (req: Request) => {
     ];
     if (!body.enquiry_type || !validEnquiryTypes.includes(body.enquiry_type)) {
       return new Response(
-        JSON.stringify({ success: false, message: 'Invalid enquiry classification.' }),
+        JSON.stringify({ success: false, message: 'Invalid enquiry classification type.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
     const message = (body.message || '').replace(/<[^>]*>/g, '').trim();
-    if (!message || message.length < 10 || message.length > 3000) {
+    if (!message || message.length < 5 || message.length > 3000) {
       return new Response(
-        JSON.stringify({ success: false, message: 'Message must be between 10 and 3000 characters.' }),
+        JSON.stringify({ success: false, message: 'Message must be between 5 and 3000 characters.' }),
         { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const companyId = body.company_id || DEFAULT_COMPANY_ID;
+    const pageSource = (body.page_source || '/contact').trim().slice(0, 255);
 
-    // 4. Execute Transactional RPC in PostgreSQL
+    // 4. Invoke canonical public.submit_lead_enquiry SECURITY DEFINER RPC
     const { data: rpcResult, error: rpcError } = await supabase.rpc('submit_lead_enquiry', {
-      p_company_id: companyId,
+      p_company_slug: 'vardhan-techverse',
+      p_enquiry_type: body.enquiry_type,
       p_name: name,
       p_email: email,
       p_phone: phone,
-      p_enquiry_type: body.enquiry_type,
       p_message: message,
-      p_page_source: body.page_source || '/contact',
-      p_source: body.source || 'WEBSITE',
-      p_metadata: body.metadata || {},
-      p_rate_limit_key: rateLimitKey,
+      p_page_source: pageSource,
+      p_honeypot: honeypotInput,
+      p_client_ip: clientIp,
     });
 
     if (rpcError) {
-      console.error('[submit-enquiry] RPC Error:', rpcError);
+      console.error('[submit-enquiry] RPC Execution Error:', rpcError.message);
+      const isRateLimited = rpcError.message.toLowerCase().includes('rate limit');
       return new Response(
-        JSON.stringify({ success: false, message: rpcError.message }),
-        { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
-
-    if (rpcResult && rpcResult.success === false) {
-      const statusCode = rpcResult.code === 'RATE_LIMITED' ? 429 : 400;
-      return new Response(
-        JSON.stringify(rpcResult),
-        { status: statusCode, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+        JSON.stringify({
+          success: false,
+          message: isRateLimited
+            ? 'Too many enquiries have been submitted from this connection. Please wait a few minutes and try again.'
+            : 'Unable to submit your enquiry at this time. Please try again shortly.',
+        }),
+        {
+          status: isRateLimited ? 429 : 500,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        }
       );
     }
 
     return new Response(
       JSON.stringify(rpcResult),
-      { status: 201, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
   } catch (err: unknown) {
     const error = err as Error;
-    console.error('[submit-enquiry] Unhandled error:', error);
+    console.error('[submit-enquiry] Unhandled Exception:', error.message || error);
     return new Response(
       JSON.stringify({
         success: false,
-        message: 'An internal error occurred while logging your enquiry.',
+        message: 'Unable to submit your enquiry at this time. Please try again shortly.',
       }),
       { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
