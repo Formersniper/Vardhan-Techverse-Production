@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/common/Logo';
+import { supabase } from '@/lib/supabase';
 import { ShieldCheck, Lock, Mail, ArrowRight, AlertCircle } from 'lucide-react';
 
 export default function AdminLoginPage() {
@@ -12,7 +13,7 @@ export default function AdminLoginPage() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const router = useRouter();
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -23,16 +24,36 @@ export default function AdminLoginPage() {
 
     setLoading(true);
 
-    setTimeout(() => {
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('vt_admin_session', JSON.stringify({
-          user: { email, role: email.includes('admin') ? 'ADMIN' : 'OPERATOR' },
-          token: 'operator-jwt-session-token',
-        }));
-        router.push('/admin');
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: email.trim(),
+        password,
+      });
+
+      if (error || !data.user) {
+        setErrorMsg(error?.message || 'Authentication failed. Please check your credentials.');
+        setLoading(false);
+        return;
       }
+
+      const { data: profile, error: profileError } = await (supabase as any)
+        .from('profiles')
+        .select('role, is_active, company_id')
+        .eq('id', data.user.id)
+        .single();
+
+      if (profileError || !profile || !profile.is_active || (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')) {
+        await supabase.auth.signOut();
+        setErrorMsg('No active authorized staff profile is configured for this account.');
+        setLoading(false);
+        return;
+      }
+
+      router.push('/admin');
+    } catch (err: any) {
+      setErrorMsg(err.message || 'An unexpected authentication error occurred.');
       setLoading(false);
-    }, 600);
+    }
   };
 
   return (

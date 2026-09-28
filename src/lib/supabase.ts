@@ -9,7 +9,7 @@ import type { Database } from '../types/database';
 export const DEFAULT_COMPANY_ID =
   process.env.NEXT_PUBLIC_DEFAULT_COMPANY_ID || 'c0000000-0000-0000-0000-000000000001';
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://vardhan-techverse.supabase.co';
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://zoxkybepsmehvzhymafp.supabase.co';
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'dummy-anon-key-stage2';
 
 // Standard client for public or authenticated browser contexts (restricted by RLS)

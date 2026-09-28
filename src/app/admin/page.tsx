@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/common/Logo';
+import { supabase } from '@/lib/supabase';
 import { formatToKolkataTime } from '@/lib/date';
 import { getSiteContent, updateSiteContent, DEFAULT_SITE_CONTENT } from '@/lib/content';
 import { getCompanyBrandConfig, CompanyBrandContent, MASTER_DEFAULT_LOGO_URL } from '@/lib/brand';
@@ -51,7 +52,7 @@ interface LeadRow {
 
 export default function AdminPortalPage() {
   const router = useRouter();
-  const [session, setSession] = useState<{ user: { email: string; role: string } } | null>(null);
+  const [session, setSession] = useState<{ email: string; role: string; fullName?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'leads' | 'content' | 'brand'>('leads');
 
   // Lead State
@@ -84,22 +85,60 @@ export default function AdminPortalPage() {
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
 
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      const stored = localStorage.getItem('vt_admin_session');
-      if (!stored) {
-        router.push('/admin/login');
+    let isMounted = true;
+
+    const initAuth = async () => {
+      const { data: { session: activeSession }, error: sessionError } = await supabase.auth.getSession();
+
+      if (sessionError || !activeSession || !activeSession.user) {
+        if (isMounted) router.push('/admin/login');
         return;
       }
-      try {
-        setSession(JSON.parse(stored));
-      } catch {
-        router.push('/admin/login');
+
+      const { data: profile, error: profileError } = await (supabase as any)
+        .from('profiles')
+        .select('role, is_active, company_id, full_name')
+        .eq('id', activeSession.user.id)
+        .single();
+
+      if (
+        profileError ||
+        !profile ||
+        !profile.is_active ||
+        (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')
+      ) {
+        await supabase.auth.signOut();
+        if (isMounted) router.push('/admin/login');
         return;
       }
-    }
-    loadLeads();
-    loadContent();
-    loadBrandConfig();
+
+      if (isMounted) {
+        setSession({
+          email: activeSession.user.email || 'Authorized Staff',
+          role: profile.role,
+          fullName: profile.full_name,
+        });
+        loadLeads();
+        loadContent();
+        loadBrandConfig();
+      }
+    };
+
+    initAuth();
+
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, currentSession) => {
+      if (!currentSession) {
+        if (isMounted) {
+          setSession(null);
+          router.push('/admin/login');
+        }
+      }
+    });
+
+    return () => {
+      isMounted = false;
+      subscription.unsubscribe();
+    };
   }, [router]);
 
   const loadLeads = async () => {
@@ -283,10 +322,8 @@ export default function AdminPortalPage() {
     }
   };
 
-  const handleLogout = () => {
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('vt_admin_session');
-    }
+  const handleLogout = async () => {
+    await supabase.auth.signOut();
     router.push('/admin/login');
   };
 
@@ -305,9 +342,9 @@ export default function AdminPortalPage() {
         <div className="flex items-center gap-3 text-xs">
           <div className="hidden md:flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-            <span>{session?.user.email || 'Authenticated Staff'}</span>
+            <span>{session?.email || 'Authenticated Staff'}</span>
             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-900 text-blue-300 rounded">
-              {session?.user.role || 'ADMIN'}
+              {session?.role || 'OPERATOR'}
             </span>
           </div>
 
