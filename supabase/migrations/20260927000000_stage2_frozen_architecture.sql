@@ -875,7 +875,6 @@ ON CONFLICT (id) DO UPDATE SET
   allowed_mime_types = ARRAY['image/jpeg', 'image/png', 'image/webp'];
 
 -- Enable RLS on storage.objects
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 -- Policy 1: Public SELECT access to active logo assets
 DROP POLICY IF EXISTS "Public Select Brand Assets" ON storage.objects;
