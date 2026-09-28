@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/common/Logo';
 import { supabase } from '@/lib/supabase';
@@ -52,6 +53,7 @@ interface LeadRow {
 
 export default function AdminPortalPage() {
   const router = useRouter();
+  const [authChecking, setAuthChecking] = useState(true);
   const [session, setSession] = useState<{ email: string; role: string; fullName?: string } | null>(null);
   const [activeTab, setActiveTab] = useState<'leads' | 'content' | 'brand'>('leads');
 
@@ -88,10 +90,15 @@ export default function AdminPortalPage() {
     let isMounted = true;
 
     const initAuth = async () => {
+      setAuthChecking(true);
       const { data: { session: activeSession }, error: sessionError } = await supabase.auth.getSession();
 
       if (sessionError || !activeSession || !activeSession.user) {
-        if (isMounted) router.push('/admin/login');
+        if (isMounted) {
+          setSession(null);
+          setAuthChecking(false);
+          router.replace('/admin/login');
+        }
         return;
       }
 
@@ -108,7 +115,11 @@ export default function AdminPortalPage() {
         (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')
       ) {
         await supabase.auth.signOut();
-        if (isMounted) router.push('/admin/login');
+        if (isMounted) {
+          setSession(null);
+          setAuthChecking(false);
+          router.replace('/admin/login');
+        }
         return;
       }
 
@@ -118,6 +129,7 @@ export default function AdminPortalPage() {
           role: profile.role,
           fullName: profile.full_name,
         });
+        setAuthChecking(false);
         loadLeads();
         loadContent();
         loadBrandConfig();
@@ -130,7 +142,8 @@ export default function AdminPortalPage() {
       if (!currentSession) {
         if (isMounted) {
           setSession(null);
-          router.push('/admin/login');
+          setAuthChecking(false);
+          router.replace('/admin/login');
         }
       }
     });
@@ -323,9 +336,34 @@ export default function AdminPortalPage() {
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
-    router.push('/admin/login');
+    try {
+      const { error } = await supabase.auth.signOut();
+      if (error) {
+        console.error('Sign out error:', error);
+        setNotification(`Sign out error: ${error.message}`);
+      }
+    } catch (err: any) {
+      console.error('Sign out exception:', err);
+    } finally {
+      setSession(null);
+      setAuthChecking(true);
+      router.replace('/admin/login');
+    }
   };
+
+  if (authChecking || !session) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 text-white">
+        <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl">
+          <Logo size="md" />
+          <div className="flex items-center gap-2 text-xs text-slate-400 font-medium">
+            <ShieldCheck className="w-4 h-4 text-blue-400 animate-pulse" />
+            <span>Verifying administrative session & profile authorization...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col">
@@ -340,17 +378,26 @@ export default function AdminPortalPage() {
         </div>
 
         <div className="flex items-center gap-3 text-xs">
+          <Link
+            href="/"
+            className="px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 font-semibold transition-colors flex items-center gap-1.5"
+            title="Return to Public Website"
+          >
+            <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <span>Back to Website</span>
+          </Link>
+
           <div className="hidden md:flex items-center gap-2 bg-slate-950 px-3 py-1.5 rounded-lg border border-slate-800 text-slate-400">
             <ShieldCheck className="w-3.5 h-3.5 text-blue-400" />
-            <span>{session?.email || 'Authenticated Staff'}</span>
+            <span>{session.email}</span>
             <span className="px-1.5 py-0.5 text-[10px] font-bold bg-blue-900 text-blue-300 rounded">
-              {session?.role || 'OPERATOR'}
+              {session.role}
             </span>
           </div>
 
           <button
             onClick={handleLogout}
-            className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors flex items-center gap-1.5"
+            className="p-2 rounded-lg bg-slate-800 hover:bg-red-900/60 hover:text-red-200 text-slate-300 transition-colors flex items-center gap-1.5"
             title="Sign Out"
           >
             <LogOut className="w-4 h-4 text-slate-400" />
