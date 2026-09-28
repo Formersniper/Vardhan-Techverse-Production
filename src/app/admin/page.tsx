@@ -51,6 +51,19 @@ interface LeadRow {
   deleted_at: string | null;
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, timeoutMsg: string): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      reject(new Error(timeoutMsg));
+    }, timeoutMs);
+  });
+
+  return Promise.race([promise, timeoutPromise]).finally(() => {
+    clearTimeout(timer);
+  });
+}
+
 export default function AdminPortalPage() {
   const router = useRouter();
   const [authChecking, setAuthChecking] = useState(true);
@@ -91,48 +104,71 @@ export default function AdminPortalPage() {
 
     const initAuth = async () => {
       setAuthChecking(true);
-      const { data: { session: activeSession }, error: sessionError } = await supabase.auth.getSession();
+      try {
+        const { data, error: sessionError } = await withTimeout<any>(
+          supabase.auth.getSession(),
+          5000,
+          'Supabase auth session lookup timed out.'
+        );
 
-      if (sessionError || !activeSession || !activeSession.user) {
+        const activeSession = data?.session;
+
+        if (sessionError || !activeSession || !activeSession.user) {
+          if (isMounted) {
+            setSession(null);
+            router.replace('/admin/login');
+          }
+          return;
+        }
+
+        const { data: profile, error: profileError } = await withTimeout<any>(
+          (supabase as any)
+            .from('profiles')
+            .select('role, is_active, company_id, full_name')
+            .eq('id', activeSession.user.id)
+            .single(),
+          5000,
+          'Staff profile lookup timed out.'
+        );
+
+        if (
+          profileError ||
+          !profile ||
+          !profile.is_active ||
+          (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')
+        ) {
+          try {
+            await supabase.auth.signOut();
+          } catch {
+            // Ignore sign out errors during rejection
+          }
+          if (isMounted) {
+            setSession(null);
+            router.replace('/admin/login');
+          }
+          return;
+        }
+
+        if (isMounted) {
+          setSession({
+            email: activeSession.user.email || 'Authorized Staff',
+            role: profile.role,
+            fullName: profile.full_name,
+          });
+          loadLeads();
+          loadContent();
+          loadBrandConfig();
+        }
+      } catch (err: any) {
+        console.warn('[initAuth] Authentication verification failed or timed out:', err);
         if (isMounted) {
           setSession(null);
-          setAuthChecking(false);
           router.replace('/admin/login');
         }
-        return;
-      }
-
-      const { data: profile, error: profileError } = await (supabase as any)
-        .from('profiles')
-        .select('role, is_active, company_id, full_name')
-        .eq('id', activeSession.user.id)
-        .single();
-
-      if (
-        profileError ||
-        !profile ||
-        !profile.is_active ||
-        (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')
-      ) {
-        await supabase.auth.signOut();
+      } finally {
         if (isMounted) {
-          setSession(null);
           setAuthChecking(false);
-          router.replace('/admin/login');
         }
-        return;
-      }
-
-      if (isMounted) {
-        setSession({
-          email: activeSession.user.email || 'Authorized Staff',
-          role: profile.role,
-          fullName: profile.full_name,
-        });
-        setAuthChecking(false);
-        loadLeads();
-        loadContent();
-        loadBrandConfig();
       }
     };
 
@@ -351,7 +387,7 @@ export default function AdminPortalPage() {
     }
   };
 
-  if (authChecking || !session) {
+  if (authChecking) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 text-white">
         <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl">
@@ -360,6 +396,21 @@ export default function AdminPortalPage() {
             <ShieldCheck className="w-4 h-4 text-blue-400 animate-pulse" />
             <span>Verifying administrative session & profile authorization...</span>
           </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) {
+    return (
+      <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 text-white">
+        <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl max-w-sm text-center">
+          <AlertCircle className="w-8 h-8 text-amber-400" />
+          <h2 className="text-base font-bold text-white">Authentication Required</h2>
+          <p className="text-xs text-slate-400">You must be signed in with an active staff profile to access this portal.</p>
+          <Link href="/admin/login" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors">
+            Go to Login Page
+          </Link>
         </div>
       </div>
     );
