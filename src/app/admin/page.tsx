@@ -116,6 +116,7 @@ export default function AdminPortalPage() {
         if (sessionError || !activeSession || !activeSession.user) {
           if (isMounted) {
             setSession(null);
+            setAuthChecking(false);
             router.replace('/admin/login');
           }
           return;
@@ -144,6 +145,7 @@ export default function AdminPortalPage() {
           }
           if (isMounted) {
             setSession(null);
+            setAuthChecking(false);
             router.replace('/admin/login');
           }
           return;
@@ -163,6 +165,7 @@ export default function AdminPortalPage() {
         console.warn('[initAuth] Authentication verification failed or timed out:', err);
         if (isMounted) {
           setSession(null);
+          setAuthChecking(false);
           router.replace('/admin/login');
         }
       } finally {
@@ -171,6 +174,13 @@ export default function AdminPortalPage() {
         }
       }
     };
+
+    // Independent maximum authentication watchdog timer (6 seconds max)
+    const watchdogTimer = setTimeout(() => {
+      if (isMounted) {
+        setAuthChecking(false);
+      }
+    }, 6000);
 
     initAuth();
 
@@ -186,6 +196,7 @@ export default function AdminPortalPage() {
 
     return () => {
       isMounted = false;
+      clearTimeout(watchdogTimer);
       subscription.unsubscribe();
     };
   }, [router]);
@@ -404,12 +415,17 @@ export default function AdminPortalPage() {
   if (!session) {
     return (
       <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 text-white">
-        <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl max-w-sm text-center">
-          <AlertCircle className="w-8 h-8 text-amber-400" />
-          <h2 className="text-base font-bold text-white">Authentication Required</h2>
-          <p className="text-xs text-slate-400">You must be signed in with an active staff profile to access this portal.</p>
-          <Link href="/admin/login" className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors">
-            Go to Login Page
+        <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl max-w-md text-center">
+          <AlertCircle className="w-10 h-10 text-amber-400" />
+          <h2 className="text-lg font-bold text-white">Administrative authentication required.</h2>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            You must be signed in with an active staff profile to access this portal.
+          </p>
+          <Link
+            href="/admin/login"
+            className="mt-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-bold transition-colors shadow-lg shadow-blue-600/20"
+          >
+            Go to Admin Login
           </Link>
         </div>
       </div>
