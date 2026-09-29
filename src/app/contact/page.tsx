@@ -50,8 +50,8 @@ export default function ContactPage() {
                 <div className="flex items-start gap-3">
                   <MapPin className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-semibold block text-slate-900">Location &amp; Operating Markets</span>
-                    <span>{profile.operating_location || 'Gurugram, Haryana, India (Active Focus Market)'}</span>
+                    <span className="font-semibold block text-slate-900">Location</span>
+                    <span>Gurugram, Haryana, India</span>
                   </div>
                 </div>
 

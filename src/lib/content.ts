@@ -28,7 +28,7 @@ export interface PolicyContent {
 // Pre-defined safe fallbacks to guarantee pages render smoothly if DB is offline
 export const DEFAULT_SITE_CONTENT: Record<string, any> = {
   COMPANY_PROFILE: {
-    operating_location: 'Gurugram, Haryana, India (Active Focus Market)',
+    operating_location: 'Gurugram, Haryana, India',
     operating_city: 'Gurugram',
     service_geography: 'Active focus in Gurugram & NCR; coverage evolves with client mandates and market opportunities.',
     description:

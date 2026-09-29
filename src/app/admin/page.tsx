@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Logo } from '@/components/common/Logo';
@@ -98,8 +98,11 @@ export default function AdminPortalPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [uploadingLogo, setUploadingLogo] = useState(false);
   const [logoPreview, setLogoPreview] = useState<string | null>(null);
+  const hasInitializedRef = useRef(false);
 
   useEffect(() => {
+    if (hasInitializedRef.current) return;
+    hasInitializedRef.current = true;
     let isMounted = true;
 
     const initAuth = async () => {
@@ -199,7 +202,7 @@ export default function AdminPortalPage() {
       clearTimeout(watchdogTimer);
       subscription.unsubscribe();
     };
-  }, [router]);
+  }, []);
 
   const loadLeads = async () => {
     setLoading(true);

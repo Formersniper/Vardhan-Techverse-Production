@@ -365,6 +365,17 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           </div>
         )}
 
+        {enquiryType === 'TECHNOLOGY' && (
+          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-150">
+            <div className="text-xs font-semibold text-slate-700 mb-1">
+              General Corporate &amp; Technology Advisory
+            </div>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              For technology solutions, GrowthForge platform inquiries, or general corporate matters, please specify details in the Requirement Overview section below.
+            </p>
+          </div>
+        )}
+
         {/* Contact Information Fields */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
