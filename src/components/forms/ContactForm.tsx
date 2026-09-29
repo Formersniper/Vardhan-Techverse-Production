@@ -235,20 +235,23 @@ export const ContactForm: React.FC<ContactFormProps> = ({
               const Icon = opt.icon;
               const isSelected = enquiryType === opt.type;
               return (
-                <button
+                <label
                   key={opt.type}
-                  type="button"
-                  role="radio"
-                  aria-checked={isSelected}
-                  aria-pressed={isSelected}
-                  disabled={loading}
-                  onClick={() => handleTypeSelect(opt.type)}
-                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
+                  className={`relative p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer select-none focus-within:ring-2 focus-within:ring-blue-600/40 ${
                     isSelected
-                      ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-600/30 font-semibold'
-                      : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
-                  } ${loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
+                      ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-600/30 font-semibold text-slate-900'
+                      : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50 text-slate-700'
+                  } ${loading ? 'opacity-60 cursor-not-allowed' : ''}`}
                 >
+                  <input
+                    type="radio"
+                    name="enquiryType"
+                    value={opt.type}
+                    checked={isSelected}
+                    disabled={loading}
+                    onChange={() => handleTypeSelect(opt.type)}
+                    className="sr-only"
+                  />
                   <div
                     className={`p-2 rounded-lg shrink-0 transition-colors ${
                       isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
@@ -256,11 +259,14 @@ export const ContactForm: React.FC<ContactFormProps> = ({
                   >
                     <Icon className="w-5 h-5" />
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <div className="text-sm font-bold text-slate-900">{opt.label}</div>
                     <div className="text-xs text-slate-500 mt-0.5">{opt.sublabel}</div>
                   </div>
-                </button>
+                  {isSelected && (
+                    <div className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-2 mr-1" />
+                  )}
+                </label>
               );
             })}
           </div>
