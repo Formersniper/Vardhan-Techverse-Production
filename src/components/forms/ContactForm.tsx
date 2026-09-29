@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { EnquiryType } from '../../types/contracts.ts';
 import { submitEnquiry } from '../../api/client.ts';
 import { trackEvent, AnalyticsEventName } from '../../services/analytics.ts';
@@ -15,37 +15,52 @@ export const ContactForm: React.FC<ContactFormProps> = ({
   pageSource = '/contact',
   onSuccess,
 }) => {
+  // Primary category selection state — initialized from prop on mount
   const [enquiryType, setEnquiryType] = useState<EnquiryType>(initialType);
+
+  // Core contact form state
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
   const [message, setMessage] = useState('');
   const [honeypot, setHoneypot] = useState('');
 
-  // Adaptive category metadata
+  // Adaptive category-specific metadata state
   const [propertyLocality, setPropertyLocality] = useState('Golf Course Road');
   const [budgetBracket, setBudgetBracket] = useState('₹5 Cr – ₹10 Cr');
   const [leadVolume, setLeadVolume] = useState('500 – 2,000 / month');
   const [crmPlatform, setCrmPlatform] = useState('HubSpot / Salesforce / None');
   const [partnerType, setPartnerType] = useState('Real Estate Developer');
 
+  // Operation UI state
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successLead, setSuccessLead] = useState<{ leadNumber: string; businessUnit: string } | null>(null);
 
-  useEffect(() => {
-    if (initialType) {
-      setEnquiryType(initialType);
-    }
-  }, [initialType]);
-
+  // Handle explicit category switching & reset stale category-specific fields
   const handleTypeSelect = (type: EnquiryType) => {
+    if (loading) return;
     setEnquiryType(type);
+    setErrorMsg(null);
+
+    // Reset adaptive category fields to default values for the selected category
+    if (type === 'REAL_ESTATE') {
+      setPropertyLocality('Golf Course Road');
+      setBudgetBracket('₹5 Cr – ₹10 Cr');
+    } else if (type === 'AUTOMATION') {
+      setLeadVolume('500 – 2,000 / month');
+      setCrmPlatform('HubSpot / Salesforce / None');
+    } else if (type === 'DEVELOPER_PARTNERSHIP') {
+      setPartnerType('Real Estate Developer');
+    }
+
     trackEvent('enquiry_type_selected', { type });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+
     setErrorMsg(null);
 
     // Client-side quick check
@@ -69,8 +84,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({
 
     setLoading(true);
 
-    // Assemble adaptive metadata
-    const metadata: Record<string, any> = {};
+    // Assemble adaptive metadata strictly for the active category
+    const metadata: Record<string, unknown> = {};
     if (enquiryType === 'REAL_ESTATE') {
       metadata.preferred_locality = propertyLocality;
       metadata.budget_bracket = budgetBracket;
@@ -83,15 +98,19 @@ export const ContactForm: React.FC<ContactFormProps> = ({
 
     try {
       const res = await submitEnquiry({
-        name,
-        email,
-        phone,
+        name: name.trim(),
+        email: email.trim(),
+        phone: phone.trim(),
         enquiry_type: enquiryType,
-        message,
+        message: message.trim(),
         page_source: pageSource,
         metadata,
         website_url_check: honeypot,
       });
+
+      if (!res || !res.success || !res.lead_number) {
+        throw new Error(res?.message || 'The server did not issue a valid tracking reference. Please try again.');
+      }
 
       // Track analytics conversion
       let eventName: AnalyticsEventName = 'contact_started';
@@ -99,18 +118,19 @@ export const ContactForm: React.FC<ContactFormProps> = ({
       if (enquiryType === 'AUTOMATION') eventName = 'automation_enquiry_submitted';
       if (enquiryType === 'DEVELOPER_PARTNERSHIP') eventName = 'developer_enquiry_submitted';
       if (enquiryType === 'TECHNOLOGY') eventName = 'technology_enquiry_submitted';
-      trackEvent(eventName, { lead_number: res.lead_number || '' });
+      trackEvent(eventName, { lead_number: res.lead_number });
 
       setSuccessLead({
-        leadNumber: res.lead_number || 'LEAD-CONFIRMED',
-        businessUnit: (res as any).business_unit || 'CORPORATE',
+        leadNumber: res.lead_number,
+        businessUnit: res.business_unit || 'CORPORATE',
       });
 
-      if (onSuccess && res.lead_number) {
+      if (onSuccess) {
         onSuccess(res.lead_number);
       }
-    } catch (err: any) {
-      setErrorMsg(err.message || 'Unable to submit enquiry at this moment. Please call us directly.');
+    } catch (err: unknown) {
+      const error = err as Error;
+      setErrorMsg(error.message || 'Unable to submit enquiry at this moment. Please try again or call us directly.');
     } finally {
       setLoading(false);
     }
@@ -121,6 +141,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     setEmail('');
     setPhone('');
     setMessage('');
+    setHoneypot('');
     setSuccessLead(null);
     setErrorMsg(null);
   };
@@ -138,22 +159,24 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           Thank you, {name.split(' ')[0] || 'Valued Client'}
         </h3>
         <p className="text-slate-600 text-sm max-w-md mx-auto mb-6">
-          Your enquiry has been classified under <strong className="text-slate-900">{successLead.businessUnit}</strong> and assigned a unique tracking reference.
+          Your enquiry has been received under <strong className="text-slate-900">{successLead.businessUnit}</strong> and assigned a unique tracking reference.
         </p>
 
         <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 max-w-sm mx-auto mb-8">
-          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tracking Reference</div>
+          <div className="text-xs text-slate-500 uppercase tracking-wider mb-1">Tracking Reference Number</div>
           <div className="text-xl font-mono font-bold text-slate-900">{successLead.leadNumber}</div>
           <div className="text-xs text-slate-500 mt-2">
-            An advisory specialist will review your request and get in touch within 4 business hours.
+            An advisory specialist will review your request and get in touch with you shortly.
           </div>
         </div>
 
         <button
+          type="button"
           onClick={resetForm}
-          className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors"
+          className="text-sm font-semibold text-blue-600 hover:text-blue-800 transition-colors inline-flex items-center gap-1"
         >
-          Submit Another Enquiry →
+          <span>Submit Another Enquiry</span>
+          <ArrowRight className="w-4 h-4" />
         </button>
       </div>
     );
@@ -163,7 +186,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
     {
       type: 'REAL_ESTATE' as EnquiryType,
       label: 'Real Estate',
-      sublabel: 'Gurugram Advisory & Brokerage',
+      sublabel: 'Residential & Commercial Advisory',
       icon: Building2,
     },
     {
@@ -202,12 +225,12 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           />
         </div>
 
-        {/* Step 1: Classification Selector */}
+        {/* Step 1: Category Classification Selector */}
         <div>
           <label className="block text-sm font-bold text-slate-900 mb-3">
             What can we help you with? <span className="text-blue-600">*</span>
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Requirement Category">
             {categoryOptions.map((opt) => {
               const Icon = opt.icon;
               const isSelected = enquiryType === opt.type;
@@ -215,15 +238,19 @@ export const ContactForm: React.FC<ContactFormProps> = ({
                 <button
                   key={opt.type}
                   type="button"
+                  role="radio"
+                  aria-checked={isSelected}
+                  aria-pressed={isSelected}
+                  disabled={loading}
                   onClick={() => handleTypeSelect(opt.type)}
-                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 ${
+                  className={`p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 focus:outline-none focus:ring-2 focus:ring-blue-600 ${
                     isSelected
-                      ? 'border-blue-600 bg-blue-50/60 ring-2 ring-blue-600/20'
-                      : 'border-slate-200 hover:border-slate-300 bg-white'
-                  }`}
+                      ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-600/30 font-semibold'
+                      : 'border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/50'
+                  } ${loading ? 'opacity-60 cursor-not-allowed' : 'cursor-pointer'}`}
                 >
                   <div
-                    className={`p-2 rounded-lg shrink-0 ${
+                    className={`p-2 rounded-lg shrink-0 transition-colors ${
                       isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
                     }`}
                   >
@@ -243,30 +270,33 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         {enquiryType === 'REAL_ESTATE' && (
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in duration-150">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Preferred Gurugram Corridor
+              <label htmlFor="property_locality" className="block text-xs font-semibold text-slate-700 mb-1.5">
+                Preferred Corridor / Location
               </label>
               <select
+                id="property_locality"
                 value={propertyLocality}
                 onChange={(e) => setPropertyLocality(e.target.value)}
-                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="Golf Course Road">Golf Course Road (Luxury High-Rise)</option>
                 <option value="Golf Course Extension">Golf Course Extension Road</option>
                 <option value="Dwarka Expressway">Dwarka Expressway Corridor</option>
                 <option value="Southern Peripheral Road (SPR)">Southern Peripheral Road (SPR)</option>
-                <option value="Sector 54/42 DLF Phase 5">DLF Phase 5 / Camellias / Magnolias Belt</option>
-                <option value="Boutique Plotted Development">Boutique Plotted Colony</option>
+                <option value="DLF Phase 5 / Luxury Belt">DLF Phase 5 / Luxury Belt</option>
+                <option value="Commercial / Office Space">Commercial &amp; Institutional Space</option>
+                <option value="Boutique Plotted Colony">Boutique Plotted Development</option>
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label htmlFor="budget_bracket" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Target Investment Range
               </label>
               <select
+                id="budget_bracket"
                 value={budgetBracket}
                 onChange={(e) => setBudgetBracket(e.target.value)}
-                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="₹3 Cr – ₹5 Cr">₹3 Cr – ₹5 Cr</option>
                 <option value="₹5 Cr – ₹10 Cr">₹5 Cr – ₹10 Cr</option>
@@ -280,13 +310,14 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         {enquiryType === 'AUTOMATION' && (
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 grid grid-cols-1 sm:grid-cols-2 gap-4 animate-in fade-in duration-150">
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label htmlFor="lead_volume" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Estimated Monthly Inbound Leads
               </label>
               <select
+                id="lead_volume"
                 value={leadVolume}
                 onChange={(e) => setLeadVolume(e.target.value)}
-                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="100 – 500 / month">100 – 500 / month</option>
                 <option value="500 – 2,000 / month">500 – 2,000 / month</option>
@@ -295,13 +326,14 @@ export const ContactForm: React.FC<ContactFormProps> = ({
               </select>
             </div>
             <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+              <label htmlFor="crm_platform" className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Current Sales / CRM Stack
               </label>
               <select
+                id="crm_platform"
                 value={crmPlatform}
                 onChange={(e) => setCrmPlatform(e.target.value)}
-                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+                className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
               >
                 <option value="HubSpot">HubSpot</option>
                 <option value="Salesforce">Salesforce</option>
@@ -316,15 +348,16 @@ export const ContactForm: React.FC<ContactFormProps> = ({
 
         {enquiryType === 'DEVELOPER_PARTNERSHIP' && (
           <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 animate-in fade-in duration-150">
-            <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+            <label htmlFor="partner_type" className="block text-xs font-semibold text-slate-700 mb-1.5">
               Organization / Partnership Profile
             </label>
             <select
+              id="partner_type"
               value={partnerType}
               onChange={(e) => setPartnerType(e.target.value)}
-              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-hidden focus:ring-2 focus:ring-blue-600"
+              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3 py-2 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-600"
             >
-              <option value="Real Estate Developer">Real Estate Developer (Gurugram Project)</option>
+              <option value="Real Estate Developer">Real Estate Developer</option>
               <option value="Channel Partner / Associate Broker">Channel Partner / Associate Brokerage</option>
               <option value="Architectural / Project Consultancy">Architectural / Land Advisory</option>
               <option value="Financial Institution / Fund">Institutional Real Estate Fund</option>
@@ -345,7 +378,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Rahul Sharma"
-              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
+              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
             />
           </div>
 
@@ -360,7 +393,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               placeholder="e.g. +91 98110 12345"
-              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
+              className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
             />
           </div>
         </div>
@@ -376,7 +409,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="e.g. rahul@company.com"
-            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
+            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
           />
         </div>
 
@@ -390,8 +423,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({
             required
             value={message}
             onChange={(e) => setMessage(e.target.value)}
-            placeholder="Tell us about the property criteria or sales automation challenge..."
-            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
+            placeholder="Tell us about your property criteria, automation requirement, or partnership proposal..."
+            className="w-full text-sm bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-600 placeholder:text-slate-400"
           />
         </div>
 
@@ -405,7 +438,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
         <button
           type="submit"
           disabled={loading}
-          className="w-full py-3.5 px-6 rounded-xl font-semibold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-xs flex items-center justify-center gap-2 disabled:opacity-60 active:scale-[0.99]"
+          className="w-full py-3.5 px-6 rounded-xl font-semibold text-white bg-slate-900 hover:bg-blue-600 transition-colors shadow-xs flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.99]"
         >
           {loading ? (
             <>
@@ -420,8 +453,8 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           )}
         </button>
 
-        <p className="text-center text-xs text-slate-400">
-          Strict confidentiality guaranteed. We never sell, broker, or transmit customer contact information to third parties.
+        <p className="text-center text-xs text-slate-500">
+          Your contact information is kept strictly confidential and processed only to respond to your request.
         </p>
       </form>
     </div>

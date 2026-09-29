@@ -67,6 +67,7 @@ export interface EnquiryResponse {
   success: boolean;
   lead_id?: string;
   lead_number?: string;
+  business_unit?: string;
   message: string;
   errors?: string[];
 }
