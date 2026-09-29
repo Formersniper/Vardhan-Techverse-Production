@@ -106,17 +106,26 @@ export default function AdminPortalPage() {
     let isMounted = true;
 
     const initAuth = async () => {
+      console.info('[ADMIN AUTH] init started');
       setAuthChecking(true);
       try {
+        console.info('[ADMIN AUTH] calling getSession');
         const { data, error: sessionError } = await withTimeout<any>(
           supabase.auth.getSession(),
           5000,
           'Supabase auth session lookup timed out.'
         );
 
+        console.info('[ADMIN AUTH] getSession returned', {
+          hasSession: Boolean(data?.session),
+          hasUser: Boolean(data?.session?.user),
+          error: sessionError?.message || null,
+        });
+
         const activeSession = data?.session;
 
         if (sessionError || !activeSession || !activeSession.user) {
+          console.info('[ADMIN AUTH] authorization rejected');
           if (isMounted) {
             setSession(null);
             setAuthChecking(false);
@@ -124,6 +133,10 @@ export default function AdminPortalPage() {
           }
           return;
         }
+
+        console.info('[ADMIN AUTH] querying profile', {
+          userIdPresent: Boolean(activeSession?.user?.id),
+        });
 
         const { data: profile, error: profileError } = await withTimeout<any>(
           (supabase as any)
@@ -135,12 +148,20 @@ export default function AdminPortalPage() {
           'Staff profile lookup timed out.'
         );
 
+        console.info('[ADMIN AUTH] profile returned', {
+          profilePresent: Boolean(profile),
+          role: profile?.role || null,
+          active: profile?.is_active ?? null,
+          error: profileError?.message || null,
+        });
+
         if (
           profileError ||
           !profile ||
           !profile.is_active ||
           (profile.role !== 'ADMIN' && profile.role !== 'OPERATOR')
         ) {
+          console.info('[ADMIN AUTH] authorization rejected');
           try {
             await supabase.auth.signOut();
           } catch {
@@ -155,6 +176,7 @@ export default function AdminPortalPage() {
         }
 
         if (isMounted) {
+          console.info('[ADMIN AUTH] authorized');
           setSession({
             email: activeSession.user.email || 'Authorized Staff',
             role: profile.role,
@@ -165,13 +187,14 @@ export default function AdminPortalPage() {
           loadBrandConfig();
         }
       } catch (err: any) {
-        console.warn('[initAuth] Authentication verification failed or timed out:', err);
+        console.error('[ADMIN AUTH] initialization error', err);
         if (isMounted) {
           setSession(null);
           setAuthChecking(false);
           router.replace('/admin/login');
         }
       } finally {
+        console.info('[ADMIN AUTH] initialization finished');
         if (isMounted) {
           setAuthChecking(false);
         }
@@ -181,6 +204,8 @@ export default function AdminPortalPage() {
     // Independent maximum authentication watchdog timer (6 seconds max)
     const watchdogTimer = setTimeout(() => {
       if (isMounted) {
+        console.warn('[ADMIN AUTH] watchdog fired');
+        setSession(null);
         setAuthChecking(false);
       }
     }, 6000);
@@ -420,7 +445,7 @@ export default function AdminPortalPage() {
       <div className="min-h-screen bg-slate-950 flex flex-col justify-center items-center p-4 text-white">
         <div className="flex flex-col items-center gap-4 bg-slate-900 p-8 rounded-3xl border border-slate-800 shadow-2xl max-w-md text-center">
           <AlertCircle className="w-10 h-10 text-amber-400" />
-          <h2 className="text-lg font-bold text-white">Administrative authentication required.</h2>
+          <h2 className="text-lg font-bold text-white">Administrative authentication could not be verified.</h2>
           <p className="text-xs text-slate-400 leading-relaxed">
             You must be signed in with an active staff profile to access this portal.
           </p>

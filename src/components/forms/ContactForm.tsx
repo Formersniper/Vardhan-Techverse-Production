@@ -230,13 +230,20 @@ export const ContactForm: React.FC<ContactFormProps> = ({
           <label className="block text-sm font-bold text-slate-900 mb-3">
             What can we help you with? <span className="text-blue-600">*</span>
           </label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3" role="radiogroup" aria-label="Requirement Category">
+          <div
+            className="grid grid-cols-1 sm:grid-cols-2 gap-3"
+            role="radiogroup"
+            aria-label="Requirement Category"
+            data-selected-category={enquiryType}
+          >
             {categoryOptions.map((opt) => {
               const Icon = opt.icon;
               const isSelected = enquiryType === opt.type;
               return (
-                <label
+                <div
                   key={opt.type}
+                  data-category={opt.type}
+                  onClick={() => handleTypeSelect(opt.type)}
                   className={`relative p-3.5 rounded-xl border text-left transition-all flex items-start gap-3 cursor-pointer select-none focus-within:ring-2 focus-within:ring-blue-600/40 ${
                     isSelected
                       ? 'border-blue-600 bg-blue-50/70 ring-2 ring-blue-600/30 font-semibold text-slate-900'
@@ -249,7 +256,10 @@ export const ContactForm: React.FC<ContactFormProps> = ({
                     value={opt.type}
                     checked={isSelected}
                     disabled={loading}
-                    onChange={() => handleTypeSelect(opt.type)}
+                    onChange={(e) => {
+                      e.stopPropagation();
+                      handleTypeSelect(opt.type);
+                    }}
                     className="sr-only"
                   />
                   <div
@@ -266,7 +276,7 @@ export const ContactForm: React.FC<ContactFormProps> = ({
                   {isSelected && (
                     <div className="w-2 h-2 rounded-full bg-blue-600 shrink-0 mt-2 mr-1" />
                   )}
-                </label>
+                </div>
               );
             })}
           </div>
