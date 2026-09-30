@@ -6,7 +6,11 @@ const nextConfig: NextConfig = {
     unoptimized: true,
   },
   trailingSlash: true,
-  distDir: 'out',
+  allowedDevOrigins: [
+    '*.run.app',
+    'localhost:3000',
+    '127.0.0.1:3000',
+  ],
   typescript: {
     ignoreBuildErrors: false,
   },
