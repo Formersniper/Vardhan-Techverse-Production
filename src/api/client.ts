@@ -57,3 +57,19 @@ export async function updateAdminEnquiry(
 
   return data;
 }
+
+export async function softDeleteAdminEnquiry(
+  leadId: string,
+  reason: string = 'Archived by administrator'
+): Promise<{ success: boolean; message?: string }> {
+  const { data, error } = await (supabase as any).rpc('admin_soft_delete_lead', {
+    p_lead_id: leadId,
+    p_reason: reason,
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to soft delete lead');
+  }
+
+  return { success: true, message: 'Lead soft-deleted successfully.' };
+}

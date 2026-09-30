@@ -81,25 +81,14 @@ export const DEFAULT_SITE_CONTENT: Record<string, any> = {
 };
 
 /**
- * Fetch controlled content keys from Supabase with predefined fallback & local storage merge
+ * Fetch controlled content keys from Supabase with predefined static default fallbacks.
+ * Resolution order:
+ * 1. Published Supabase site_content
+ * 2. Static DEFAULT_SITE_CONTENT fallback if Supabase is unavailable
  */
 export async function getSiteContent(): Promise<Record<string, any>> {
-  let localMerged = { ...DEFAULT_SITE_CONTENT };
+  const result = { ...DEFAULT_SITE_CONTENT };
 
-  // 1. Read local storage override if available
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem('vt_site_content_override');
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        Object.assign(localMerged, parsed);
-      }
-    } catch (e) {
-      // Ignore JSON parse errors
-    }
-  }
-
-  // 2. Fetch remote published content from Supabase
   try {
     const { data, error } = await (supabase as any)
       .from('site_content')
@@ -109,7 +98,7 @@ export async function getSiteContent(): Promise<Record<string, any>> {
     if (!error && data && data.length > 0) {
       data.forEach((item: { content_key: string; content_value: any }) => {
         if (item.content_key && item.content_value) {
-          localMerged[item.content_key] = item.content_value;
+          result[item.content_key] = item.content_value;
         }
       });
     }
@@ -117,31 +106,17 @@ export async function getSiteContent(): Promise<Record<string, any>> {
     console.warn('[getSiteContent] Failed to fetch content from Supabase, using defaults:', err);
   }
 
-  return localMerged;
+  return result;
 }
 
 /**
- * Admin API call to update controlled site content key
+ * Admin API call to update controlled site content key via authenticated Supabase RPC.
  */
 export async function updateSiteContent(
   contentKey: string,
   contentValue: any,
   isPublished: boolean = true
 ): Promise<{ success: boolean; message?: string }> {
-  // 1. Persist locally for client-side static export & offline guarantees
-  if (typeof window !== 'undefined') {
-    try {
-      const stored = localStorage.getItem('vt_site_content_override') || '{}';
-      const parsed = JSON.parse(stored);
-      parsed[contentKey] = contentValue;
-      localStorage.setItem('vt_site_content_override', JSON.stringify(parsed));
-      window.dispatchEvent(new Event('vt_brand_updated'));
-    } catch (e) {
-      console.warn('[updateSiteContent] localStorage write error:', e);
-    }
-  }
-
-  // 2. Attempt remote Supabase database RPC update
   try {
     const { data, error } = await (supabase as any).rpc('admin_update_site_content', {
       p_content_key: contentKey,
@@ -150,11 +125,23 @@ export async function updateSiteContent(
     });
 
     if (error) {
-      console.warn('[updateSiteContent] RPC warning:', error.message);
+      console.error('[updateSiteContent] RPC error:', error.message);
+      return {
+        success: false,
+        message: error.message || 'Failed to update site content in database.',
+      };
     }
-  } catch (err) {
-    console.warn('[updateSiteContent] Remote RPC call failed, using client persistence:', err);
-  }
 
-  return { success: true, message: 'Site content key updated successfully.' };
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('vt_brand_updated'));
+    }
+
+    return { success: true, message: 'Site content key updated successfully.' };
+  } catch (err: any) {
+    console.error('[updateSiteContent] Remote RPC call failed:', err);
+    return {
+      success: false,
+      message: err?.message || 'Remote RPC execution failed.',
+    };
+  }
 }

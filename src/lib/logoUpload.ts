@@ -66,25 +66,50 @@ export async function validateLogoFile(file: File): Promise<{ valid: boolean; er
 }
 
 /**
+ * Resolve tenant company_id for authenticated user from profile
+ */
+async function getAuthenticatedCompanyId(): Promise<string> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await (supabase as any)
+        .from('profiles')
+        .select('company_id')
+        .eq('id', user.id)
+        .single();
+      if (profile?.company_id) {
+        return profile.company_id;
+      }
+    }
+  } catch (err) {
+    console.warn('[getAuthenticatedCompanyId] Failed to resolve company_id from user profile:', err);
+  }
+  return 'c0000000-0000-0000-0000-000000000001';
+}
+
+/**
  * Upload new corporate logo to Supabase Storage and activate in COMPANY_BRAND config.
  */
 export async function uploadAndActivateLogo(
   file: File,
-  companyId: string = 'c0000000-0000-0000-0000-000000000001'
+  companyId?: string
 ): Promise<{ success: boolean; logo_url?: string; message?: string }> {
   const validation = await validateLogoFile(file);
   if (!validation.valid) {
     return { success: false, message: validation.error };
   }
 
+  const activeCompanyId = companyId && companyId !== 'c0000000-0000-0000-0000-000000000001'
+    ? companyId
+    : await getAuthenticatedCompanyId();
+
   const ext = file.name.split('.').pop()?.toLowerCase() || 'png';
   const timestamp = Date.now();
-  const filePath = `${companyId}/logo/active_${timestamp}.${ext}`;
-  let publicUrl = '';
+  const filePath = `${activeCompanyId}/logo/active_${timestamp}.${ext}`;
 
   try {
-    // Attempt upload to company-brand-assets bucket
-    const { data: uploadData, error: uploadError } = await (supabase as any).storage
+    // 1. Storage upload to company-brand-assets bucket
+    const { error: uploadError } = await (supabase as any).storage
       .from('company-brand-assets')
       .upload(filePath, file, {
         cacheControl: '3600',
@@ -93,24 +118,24 @@ export async function uploadAndActivateLogo(
       });
 
     if (uploadError) {
-      console.warn('[uploadAndActivateLogo] Storage upload error, falling back to data URL:', uploadError);
-      // Fallback: convert to Base64 Data URL for client-side persistence if storage bucket is offline
-      publicUrl = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(reader.result as string);
-        reader.onerror = reject;
-        reader.readAsDataURL(file);
-      });
-    } else {
-      const { data: urlData } = (supabase as any).storage
-        .from('company-brand-assets')
-        .getPublicUrl(filePath);
-
-      publicUrl = urlData?.publicUrl || '';
+      console.error('[uploadAndActivateLogo] Storage upload failed:', uploadError.message);
+      return {
+        success: false,
+        message: `Storage upload failed: ${uploadError.message || 'Unable to upload file to company-brand-assets storage bucket.'}`,
+      };
     }
 
+    // 2. Get Public URL
+    const { data: urlData } = (supabase as any).storage
+      .from('company-brand-assets')
+      .getPublicUrl(filePath);
+
+    const publicUrl = urlData?.publicUrl || '';
     if (!publicUrl) {
-      return { success: false, message: 'Failed to generate public URL for uploaded logo.' };
+      return {
+        success: false,
+        message: 'Storage upload succeeded, but failed to generate public URL for logo.',
+      };
     }
 
     const payload: CompanyBrandContent = {
@@ -121,16 +146,19 @@ export async function uploadAndActivateLogo(
       updated_at: new Date().toISOString(),
     };
 
-    // Update COMPANY_BRAND key in site_content via admin RPC
+    // 3. Update COMPANY_BRAND key in site_content via admin_update_site_content RPC
     const res = await updateSiteContent('COMPANY_BRAND', payload, true);
     if (!res || !res.success) {
-      return { success: false, message: res.message || 'Failed to update brand configuration.' };
+      return {
+        success: false,
+        message: res?.message || 'Logo uploaded to storage, but failed to update COMPANY_BRAND database configuration.',
+      };
     }
 
     return {
       success: true,
       logo_url: publicUrl,
-      message: 'Active corporate logo updated successfully.',
+      message: 'Active corporate logo updated successfully in storage and database.',
     };
   } catch (err: any) {
     return { success: false, message: err.message || 'Error processing logo upload.' };

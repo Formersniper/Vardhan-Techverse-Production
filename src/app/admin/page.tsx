@@ -9,7 +9,7 @@ import { formatToKolkataTime } from '@/lib/date';
 import { getSiteContent, updateSiteContent, DEFAULT_SITE_CONTENT } from '@/lib/content';
 import { getCompanyBrandConfig, CompanyBrandContent, MASTER_DEFAULT_LOGO_URL } from '@/lib/brand';
 import { uploadAndActivateLogo, restoreDefaultLogo } from '@/lib/logoUpload';
-import { fetchAdminEnquiries, updateAdminEnquiry } from '@/api/client';
+import { fetchAdminEnquiries, updateAdminEnquiry, softDeleteAdminEnquiry } from '@/api/client';
 import {
   ShieldCheck,
   Search,
@@ -317,24 +317,16 @@ export default function AdminPortalPage() {
 
     setMutating(true);
     try {
-      const res = await fetch(`/api/admin/enquiries/${selectedLead.lead_id}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          action: 'SOFT_DELETE',
-          reason: 'Archived via admin portal',
-        }),
-      });
-      const data = await res.json();
-      if (data.success) {
+      const res = await softDeleteAdminEnquiry(selectedLead.lead_id, 'Archived by administrator');
+      if (res && res.success) {
         setNotification(`Lead ${selectedLead.lead_number} soft-deleted.`);
         setSelectedLead(null);
         loadLeads();
       } else {
-        alert(data.message || 'Failed to delete lead');
+        alert(res?.message || 'Failed to delete lead');
       }
-    } catch (err) {
-      alert('Error soft-deleting lead');
+    } catch (err: any) {
+      alert(err?.message || 'Error soft-deleting lead');
     } finally {
       setMutating(false);
     }
