@@ -40,6 +40,27 @@ const child = spawn('node_modules/.bin/next', nextArgs, {
   }
 });
 
-child.on('exit', (code) => {
-  process.exit(code || 0);
+let isShuttingDown = false;
+
+function shutdown(signal) {
+  if (isShuttingDown) return;
+  isShuttingDown = true;
+
+  if (child && !child.killed) {
+    try {
+      child.kill(signal || 'SIGTERM');
+    } catch (e) {
+      // Ignore errors if process already dead
+    }
+  }
+}
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
+process.on('SIGHUP', () => shutdown('SIGHUP'));
+process.on('exit', () => shutdown('SIGTERM'));
+
+child.on('exit', (code, signal) => {
+  process.exit(code ?? (signal ? 130 : 0));
 });
+
