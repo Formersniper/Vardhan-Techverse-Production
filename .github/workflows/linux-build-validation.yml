@@ -1,0 +1,41 @@
+﻿name: Linux Build Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build static export
+        run: npm run build
+
+      - name: Verify exported RSC payloads
+        shell: bash
+        run: |
+          test -f "out/growthforge/__next.growthforge.__PAGE__.txt"
+          test -f "out/contact/__next.contact.__PAGE__.txt"
+          test -f "out/real-estate/__next.real-estate.__PAGE__.txt"
+          test -f "out/automation/__next.automation.__PAGE__.txt"
+          test -f "out/privacy/__next.privacy.__PAGE__.txt"
+          test -f "out/terms/__next.terms.__PAGE__.txt"
+          test -f "out/admin/__next.admin.__PAGE__.txt"
+          test -f "out/admin/login/__next.admin.login.__PAGE__.txt"
+
+          echo "All expected flat RSC payloads are present."
