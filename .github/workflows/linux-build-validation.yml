@@ -38,3 +38,24 @@ jobs:
           test -f "out/admin/login/__next.admin.login.__PAGE__.txt"
 
           echo "All expected flat RSC payloads are present."
+
+      - name: Validate Linux artifact over HTTP
+        shell: bash
+        run: |
+          python3 -m http.server 4173 --directory out > /tmp/http-server.log 2>&1 &
+          SERVER_PID=$!
+
+          trap 'kill $SERVER_PID' EXIT
+
+          sleep 2
+
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/growthforge/__next.growthforge.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/contact/__next.contact.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/real-estate/__next.real-estate.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/automation/__next.automation.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/privacy/__next.privacy.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/terms/__next.terms.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/admin/__next.admin.__PAGE__.txt"
+          curl -fsS -o /dev/null "http://127.0.0.1:4173/admin/login/__next.admin.login.__PAGE__.txt"
+
+          echo "All Linux RSC payloads returned HTTP 200."
