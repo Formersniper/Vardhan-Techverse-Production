@@ -24,6 +24,10 @@ jobs:
 
       - name: Build static export
         run: npm run build
+        env:
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY }}
+          NEXT_PUBLIC_DEFAULT_COMPANY_ID: ${{ secrets.NEXT_PUBLIC_DEFAULT_COMPANY_ID }}
 
       - name: Verify exported RSC payloads
         shell: bash
