@@ -194,6 +194,7 @@ export default function AdminPortalPage() {
           router.replace('/admin/login');
         }
       } finally {
+        clearTimeout(watchdogTimer);
         console.info('[ADMIN AUTH] initialization finished');
         if (isMounted) {
           setAuthChecking(false);
